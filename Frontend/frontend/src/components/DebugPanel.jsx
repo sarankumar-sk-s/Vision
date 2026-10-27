@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { debugLogger } from '../services/debugLogger.js';
-import { setRecognitionLang, RECOGNITION_LANG } from '../services/speechRecognition.js';
+import { setRecognitionLang } from '../services/speechRecognition.js';
 import { ChevronUp, ChevronDown, Trash2, Globe, Radio } from 'lucide-react';
 
 /**

@@ -25,9 +25,10 @@ const REQUEST_TIMEOUT_MS = 90000; // 90s — accommodates Render cold start + Ge
  *
  * @param {Blob} imageBlob - JPEG image blob captured from camera
  * @param {string} question - User question
+ * @param {string} [language='en'] - 'en' or 'ta'
  * @returns {Promise<{ answer: string, session_id: string }>}
  */
-export async function analyzeImage(imageBlob, question) {
+export async function analyzeImage(imageBlob, question, language = 'en') {
   if (!question || !question.trim()) {
     throw new Error('A question must be provided for visual analysis.');
   }
@@ -38,10 +39,15 @@ export async function analyzeImage(imageBlob, question) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+  // Auto-detect language if question contains Tamil characters as safety fallback
+  const isTamil = /[\u0B80-\u0BFF]/.test(question);
+  const resolvedLang = isTamil ? 'ta' : (language || 'en');
+
   // Let the browser set the multipart boundary automatically — do NOT set Content-Type manually.
   const formData = new FormData();
   formData.append('image', imageBlob, 'capture.jpg');
   formData.append('question', question.trim());
+  formData.append('language', resolvedLang);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/analyze`, {
@@ -95,9 +101,10 @@ export async function analyzeImage(imageBlob, question) {
  *
  * @param {string} sessionId - Session ID returned by analyzeImage
  * @param {string} question - Follow-up question
+ * @param {string} [language='en'] - 'en' or 'ta'
  * @returns {Promise<{ answer: string }>}
  */
-export async function askFollowUp(sessionId, question) {
+export async function askFollowUp(sessionId, question, language = 'en') {
   if (!sessionId) {
     throw new Error('No active session. Please start a new scan first.');
   }
@@ -108,11 +115,19 @@ export async function askFollowUp(sessionId, question) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+  // Auto-detect language if question contains Tamil characters as safety fallback
+  const isTamil = /[\u0B80-\u0BFF]/.test(question);
+  const resolvedLang = isTamil ? 'ta' : (language || 'en');
+
   try {
     const response = await fetch(`${API_BASE_URL}/api/follow-up`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, question: question.trim() }),
+      body: JSON.stringify({
+        session_id: sessionId,
+        question: question.trim(),
+        language: resolvedLang,
+      }),
       signal: controller.signal,
     });
 

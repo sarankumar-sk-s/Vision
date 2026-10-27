@@ -8,7 +8,11 @@ import {
 
 import { analyzeImage, askFollowUp } from './services/api.js';
 import { SpeechSynthesizer } from './services/speechSynthesis.js';
-import { speechRecognitionService } from './services/speechRecognition.js';
+import {
+  speechRecognitionService,
+  isGreeting,
+  requestMicrophonePermission,
+} from './services/speechRecognition.js';
 import { debugLogger } from './services/debugLogger.js';
 import { unlockAudio, playWakeChime, triggerHaptic } from './utils/sound.js';
 
@@ -25,10 +29,31 @@ export function App() {
   const [isListeningWake, setIsListeningWake] = useState(false);
   const [wakeError, setWakeError] = useState(null);
   const [restartCount, setRestartCount] = useState(0);
+  const [currentLang, setCurrentLang] = useState('en');
+  const [isAudioBlocked, setIsAudioBlocked] = useState(false);
+  const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
+  const [isSpeakingState, setIsSpeakingState] = useState(false);
+  const [micStatus, setMicStatus] = useState({
+    state: 'ready',
+    message: '',
+    transcript: '',
+  });
 
+  const wakeWordEnabledRef = useRef(true);
+  useEffect(() => {
+    wakeWordEnabledRef.current = wakeWordEnabled;
+  }, [wakeWordEnabled]);
+
+  const currentLangRef = useRef('en');
+  useEffect(() => {
+    currentLangRef.current = currentLang;
+  }, [currentLang]);
+
+  const hasPlayedGreetingRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const pendingQuestionRef = useRef(null);
   const lastWakeTimeRef = useRef(0);
+  const startQuestionListeningRef = useRef(null);
   // Stores the active Gemma session ID so follow-up questions reuse the same image
   const currentSessionIdRef = useRef(null);
   // Tracks whether the current PROCESSING is a follow-up (no new image) or a fresh scan
@@ -47,26 +72,118 @@ export function App() {
   /**
    * Helper: Speaks text aloud while pausing speech recognition so the app does not hear itself
    */
-  const speakSafe = useCallback(async (text) => {
+  const speakSafe = useCallback(async (text, options = {}) => {
     if (!text || !text.trim()) return;
 
     speechRecognitionService.stop();
     isSpeakingRef.current = true;
+    setIsSpeakingState(true);
     debugLogger.updateState({ speechSynthSpeaking: true });
 
-    await SpeechSynthesizer.speak(text.trim(), {
-      onEnd: () => {
-        isSpeakingRef.current = false;
-        debugLogger.updateState({ speechSynthSpeaking: false });
-      },
-      onError: () => {
-        isSpeakingRef.current = false;
-        debugLogger.updateState({ speechSynthSpeaking: false });
-      },
-    });
+    // Determine language: explicit option or Tamil Unicode characters or currentLangRef
+    const isTamil =
+      options.lang === 'ta' ||
+      /[\u0B80-\u0BFF]/.test(text) ||
+      (options.lang !== 'en' && currentLangRef.current === 'ta');
+    const lang = isTamil ? 'ta-IN' : 'en-IN';
 
-    isSpeakingRef.current = false;
-    debugLogger.updateState({ speechSynthSpeaking: false });
+    try {
+      await SpeechSynthesizer.speak(text.trim(), {
+        ...options,
+        lang,
+        onEnd: () => {
+          isSpeakingRef.current = false;
+          setIsSpeakingState(false);
+          debugLogger.updateState({ speechSynthSpeaking: false });
+          if (options.onEnd) options.onEnd();
+        },
+        onError: () => {
+          isSpeakingRef.current = false;
+          setIsSpeakingState(false);
+          debugLogger.updateState({ speechSynthSpeaking: false });
+          if (options.onError) options.onError();
+        },
+      });
+    } finally {
+      isSpeakingRef.current = false;
+      setIsSpeakingState(false);
+      debugLogger.updateState({ speechSynthSpeaking: false });
+    }
+  }, []);
+
+  /**
+   * Speaks the official welcome greeting when the website opens
+   */
+  const playWelcomeGreeting = useCallback(async () => {
+    const isTa = currentLangRef.current === 'ta';
+    const greetingText = isTa
+      ? 'வணக்கம்! தொடங்க நடுவில் உள்ள பொத்தானை அழுத்துங்கள் அல்லது "Hi" என்று சொல்லுங்கள்.'
+      : 'Welcome! Tap the center button or say Hi to get started.';
+
+    try {
+      await speakSafe(greetingText, { lang: isTa ? 'ta' : 'en' });
+      setIsAudioBlocked(false);
+      hasPlayedGreetingRef.current = true;
+    } catch (err) {
+      console.warn('Autoplay audio blocked:', err);
+      setIsAudioBlocked(true);
+    }
+  }, [speakSafe]);
+
+  // Attempt welcome voice greeting on page load
+  useEffect(() => {
+    if (hasPlayedGreetingRef.current) return;
+
+    const timer = setTimeout(() => {
+      if (!hasPlayedGreetingRef.current) {
+        playWelcomeGreeting();
+        // Check if browser blocked audio playback
+        setTimeout(() => {
+          if (!window.speechSynthesis?.speaking && !hasPlayedGreetingRef.current) {
+            setIsAudioBlocked(true);
+          }
+        }, 1200);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [playWelcomeGreeting]);
+
+  /**
+   * Switches language and immediately configures speech recognition for the next session
+   */
+  const handleSelectLang = useCallback((lang) => {
+    const validLang = lang === 'ta' ? 'ta' : 'en';
+    setCurrentLang(validLang);
+    currentLangRef.current = validLang;
+    speechRecognitionService.setLang(validLang === 'ta' ? 'ta-IN' : 'en-IN');
+
+    if (stateRef.current.status === FLOW_STATES.HOME) {
+      // Play welcome greeting in new language immediately
+      const greetingText = validLang === 'ta'
+        ? 'வணக்கம்! தொடங்க நடுவில் உள்ள பொத்தானை அழுத்துங்கள் அல்லது "Hi" என்று சொல்லுங்கள்.'
+        : 'Welcome! Tap the center button or say Hi to get started.';
+      speakSafe(greetingText, { lang: validLang });
+    } else if (stateRef.current.status === FLOW_STATES.STANDBY) {
+      speechRecognitionService.stop();
+      setRestartCount((c) => c + 1);
+    }
+  }, [speakSafe]);
+
+  /**
+   * Toggles Hands-Free Wake-Word ("Hey Mate") Mode
+   */
+  const handleToggleWakeWord = useCallback(() => {
+    setWakeWordEnabled((prev) => {
+      const next = !prev;
+      if (!next) {
+        speechRecognitionService.stop();
+        setIsListeningWake(false);
+      } else {
+        setRestartCount((c) => c + 1);
+      }
+      return next;
+    });
   }, []);
 
   /**
@@ -79,26 +196,66 @@ export function App() {
     currentSessionIdRef.current = null;
     isFollowUpModeRef.current = false;
     dispatch({ type: FLOW_ACTIONS.NEW_SCAN });
-    await speakSafe('Opening camera. Hold your phone steady.');
+    const isTa = currentLangRef.current === 'ta';
+    const msg = isTa
+      ? 'கேமரா திறக்கப்படுகிறது. மொபைலை நிலையாகப் பிடிக்கவும்.'
+      : 'Opening camera. Hold your phone steady.';
+    await speakSafe(msg, { lang: isTa ? 'ta' : 'en' });
     dispatch({ type: FLOW_ACTIONS.CAMERA_READY });
   }, [speakSafe]);
 
   /**
-   * Helper: Checks for voice commands ("new scan", "repeat", "stop")
+   * Helper: Checks for voice commands in English and Tamil ("new scan", "repeat", "stop", "toggle wake word")
    */
   const checkGlobalVoiceCommands = useCallback(
     (transcript) => {
       const clean = (transcript || '').toLowerCase().trim();
 
-      if (clean === 'stop' || clean === 'quiet' || clean === 'cancel') {
+      if (
+        clean === 'stop' ||
+        clean === 'quiet' ||
+        clean === 'cancel' ||
+        clean.includes('நிறுத்து') ||
+        clean.includes('போதும்')
+      ) {
         SpeechSynthesizer.stop();
         isSpeakingRef.current = false;
         return true;
       }
 
-      if (clean.includes('repeat') || clean.includes('read again') || clean.includes('say that again')) {
+      if (
+        clean.includes('disable wake word') ||
+        clean.includes('turn off hands free') ||
+        clean.includes('turn off wake word')
+      ) {
+        setWakeWordEnabled(false);
+        speechRecognitionService.stop();
+        speakSafe(currentLangRef.current === 'ta' ? 'ஹேண்ட்ஸ்-ஃப்ரீ முடக்கப்பட்டது.' : 'Hands-free wake word disabled.');
+        return true;
+      }
+
+      if (
+        clean.includes('enable wake word') ||
+        clean.includes('turn on hands free') ||
+        clean.includes('turn on wake word')
+      ) {
+        setWakeWordEnabled(true);
+        speakSafe(currentLangRef.current === 'ta' ? 'ஹேண்ட்ஸ்-ஃப்ரீ இயக்கப்பட்டது.' : 'Hands-free wake word enabled.');
+        return true;
+      }
+
+      if (
+        clean.includes('repeat') ||
+        clean.includes('read again') ||
+        clean.includes('say that again') ||
+        clean.includes('மீண்டும் சொல்') ||
+        clean.includes('மறுபடியும் சொல்')
+      ) {
         if (stateRef.current.currentAnswer) {
-          speakSafe(stateRef.current.currentAnswer);
+          const isTamilAns =
+            /[\u0B80-\u0BFF]/.test(stateRef.current.currentAnswer) ||
+            currentLangRef.current === 'ta';
+          speakSafe(stateRef.current.currentAnswer, { lang: isTamilAns ? 'ta' : 'en' });
         }
         return true;
       }
@@ -108,7 +265,10 @@ export function App() {
         clean.includes('scan again') ||
         clean.includes('take another photo') ||
         clean.includes('take photo') ||
-        clean.includes('open camera')
+        clean.includes('open camera') ||
+        clean.includes('புதிய படம்') ||
+        clean.includes('புதிய ஸ்கேன்') ||
+        clean.includes('படம் எடு')
       ) {
         handleNewScan();
         return true;
@@ -120,22 +280,134 @@ export function App() {
   );
 
   /**
-   * 1. Start Flow from Home: User taps Speak button or says "Hey Mate"
+   * 1. Listen for User Question (single utterance mode with waveform)
    */
-  const handleStartFromHome = useCallback(async () => {
-    await unlockAudio();
-    triggerHaptic(50);
-    // Starting fresh — clear any previous session
-    currentSessionIdRef.current = null;
-    isFollowUpModeRef.current = false;
+  const startQuestionListening = useCallback(() => {
+    const isTa = currentLangRef.current === 'ta';
+    if (!speechRecognitionService.isSupported()) {
+      const errMsg = isTa
+        ? 'இந்த உலாவியில் குரல் அறிதல் ஆதரிக்கப்படவில்லை. Chrome அல்லது Edge பயன்படுத்தவும்.'
+        : 'Voice recognition is not supported in this browser. Please use Chrome or Edge.';
+      setMicStatus({
+        state: 'error',
+        message: errMsg,
+      });
+      return;
+    }
 
-    dispatch({ type: FLOW_ACTIONS.START_FLOW });
-    await speakSafe('Opening camera. Hold your phone steady.');
-    dispatch({ type: FLOW_ACTIONS.CAMERA_READY });
-  }, [speakSafe]);
+    // Explicitly configure language BEFORE starting session
+    speechRecognitionService.setLang(isTa ? 'ta-IN' : 'en-IN');
+
+    speechRecognitionService.startQuestionMode({
+      isAppSpeaking: () => isSpeakingRef.current,
+      onStatusChange: (status) => {
+        setMicStatus(status);
+      },
+      onInterim: (interim) => {
+        // Continuous live interim words update on screen
+        dispatch({
+          type: FLOW_ACTIONS.UPDATE_INTERIM_TRANSCRIPT,
+          payload: interim,
+        });
+      },
+      onResult: async (finalQuestion) => {
+        const cleanQ = (finalQuestion || '').trim();
+        // Do not send empty or unrecognized text to backend
+        if (!cleanQ) return;
+
+        // Prevent duplicate trigger for one voice request
+        if (isProcessingRef.current) return;
+
+        // 1. Check if user said "Hi", "Hello", or "வணக்கம்"
+        if (isGreeting(cleanQ)) {
+          dispatch({
+            type: FLOW_ACTIONS.UPDATE_INTERIM_TRANSCRIPT,
+            payload: cleanQ,
+          });
+          const greetingReply = currentLangRef.current === 'ta'
+            ? 'வணக்கம்! நான் தயாராக உள்ளேன். உங்கள் கேள்வியைக் கேளுங்கள், உதாரணமாக: என் முன்னால் என்ன இருக்கிறது?'
+            : 'Hello! I am ready. What would you like to know? You can ask: What is in front of me?';
+          await speakSafe(greetingReply, { lang: currentLangRef.current });
+          startQuestionListeningRef.current?.();
+          return;
+        }
+
+        // 2. Check for global voice commands (new scan, repeat, stop)
+        const isCommand = checkGlobalVoiceCommands(cleanQ);
+        if (isCommand) return;
+
+        // 3. Keep the final recognized sentence visible on screen
+        dispatch({
+          type: FLOW_ACTIONS.UPDATE_INTERIM_TRANSCRIPT,
+          payload: cleanQ,
+        });
+
+        if (isFollowUpModeRef.current && currentSessionIdRef.current) {
+          // Follow-up: directly go to PROCESSING reusing existing image
+          dispatch({
+            type: FLOW_ACTIONS.QUESTION_FINALIZED,
+            payload: cleanQ,
+          });
+        } else {
+          // Fresh scan: lock in question and open camera to capture photo
+          pendingQuestionRef.current = cleanQ;
+          dispatch({ type: FLOW_ACTIONS.START_FLOW });
+          const isTaNow = currentLangRef.current === 'ta';
+          const camMsg = isTaNow
+            ? 'கேமரா திறக்கப்படுகிறது. மொபைலை நிலையாகப் பிடிக்கவும்.'
+            : 'Opening camera. Hold your phone steady.';
+          await speakSafe(camMsg, { lang: isTaNow ? 'ta' : 'en' });
+          dispatch({ type: FLOW_ACTIONS.CAMERA_READY });
+        }
+      },
+      onError: (err) => {
+        console.warn('Speech recognition reported error:', err);
+        // Error is already formatted and set into micStatus by manager
+      },
+    });
+  }, [checkGlobalVoiceCommands, speakSafe]);
+
+  useEffect(() => {
+    startQuestionListeningRef.current = startQuestionListening;
+  }, [startQuestionListening]);
 
   /**
-   * 2. Frame Captured after 5 -> 1 Countdown
+   * 2. Start Flow from Home: User taps center Speak button or says "Hi"
+   */
+  const handleStartFromHome = useCallback(async () => {
+    // 1. Immediately stop any active wake session before transitioning to question mode
+    speechRecognitionService.stop();
+
+    await unlockAudio();
+    playWakeChime();
+    triggerHaptic(50);
+    hasPlayedGreetingRef.current = true;
+    setIsAudioBlocked(false);
+
+    // Starting fresh question session
+    currentSessionIdRef.current = null;
+    isFollowUpModeRef.current = false;
+    pendingQuestionRef.current = null;
+
+    const isTa = currentLangRef.current === 'ta';
+
+    // Show status: Requesting microphone permission
+    setMicStatus({
+      state: 'requesting_permission',
+      message: isTa
+        ? 'மைக்ரோஃபோன் அனுமதி கேட்கப்படுகிறது…'
+        : 'Requesting microphone permission…',
+    });
+
+    // Enter ASK screen immediately so user sees the interface
+    dispatch({ type: FLOW_ACTIONS.START_ASK });
+
+    // Start recognition directly without device contention from getUserMedia
+    startQuestionListening();
+  }, [startQuestionListening]);
+
+  /**
+   * 3. Frame Captured after 5 -> 1 Countdown
    */
   const handleFrameCaptured = useCallback(
     async ({ blob, previewUrl }) => {
@@ -144,64 +416,21 @@ export function App() {
         payload: { blob, previewUrl },
       });
 
-      // If user had spoken a question with the initial "Hey Mate [question]"
-      if (pendingQuestionRef.current) {
-        const initialQ = pendingQuestionRef.current;
-        pendingQuestionRef.current = null;
-        dispatch({
-          type: FLOW_ACTIONS.QUESTION_FINALIZED,
-          payload: initialQ,
-        });
-        return;
-      }
+      const qToUse =
+        pendingQuestionRef.current ||
+        stateRef.current.currentQuestion ||
+        (currentLangRef.current === 'ta'
+          ? 'என் முன்னால் என்ன இருக்கிறது என்று தெளிவாக விவரிக்கவும்.'
+          : 'Describe what is in front of me in detail.');
+      pendingQuestionRef.current = null;
 
-      // App speaks: "Image captured. What would you like to know?"
-      await speakSafe('Image captured. What would you like to know?');
-
-      // Start speech recognition listening for question
-      startQuestionListening();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [speakSafe]
-  );
-
-  /**
-   * 3. Listen for User Question (single utterance mode with waveform)
-   */
-  const startQuestionListening = useCallback(() => {
-    if (!speechRecognitionService.isSupported()) {
       dispatch({
         type: FLOW_ACTIONS.QUESTION_FINALIZED,
-        payload: 'Describe what is in front of me in detail.',
+        payload: qToUse,
       });
-      return;
-    }
-
-    speechRecognitionService.startQuestionMode({
-      isAppSpeaking: () => isSpeakingRef.current,
-      onInterim: (_interim) => {
-        dispatch({ type: FLOW_ACTIONS.START_ASK });
-      },
-      onResult: (finalQuestion) => {
-        const isCommand = checkGlobalVoiceCommands(finalQuestion);
-        if (isCommand) return;
-
-        dispatch({
-          type: FLOW_ACTIONS.QUESTION_FINALIZED,
-          payload: finalQuestion,
-        });
-      },
-      onError: (err) => {
-        if (err.type === 'no-speech') {
-          // Default to general description if no speech heard
-          dispatch({
-            type: FLOW_ACTIONS.QUESTION_FINALIZED,
-            payload: 'Describe what is in front of me in detail.',
-          });
-        }
-      },
-    });
-  }, [checkGlobalVoiceCommands]);
+    },
+    []
+  );
 
   /**
    * 4. Lifecycle Coordinator for PROCESSING, ANSWER, HOME, and STANDBY
@@ -217,16 +446,23 @@ export function App() {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
 
-        await speakSafe('Connecting to the assistant. This may take a moment.');
+        // Auto-detect language from Tamil unicode in question or current selection
+        const isTamil = /[\u0B80-\u0BFF]/.test(currentQuestion) || currentLangRef.current === 'ta';
+        const langCode = isTamil ? 'ta' : 'en';
+
+        const connectingMsg = isTamil
+          ? 'உதவியாளருடன் இணைகிறது. ஒரு கணம் காத்திருக்கவும்.'
+          : 'Connecting to the assistant. This may take a moment.';
+        await speakSafe(connectingMsg, { lang: langCode });
 
         try {
           let result;
           if (isFollowUpModeRef.current && currentSessionIdRef.current) {
             // Follow-up: reuse the cached image on the backend — no new image upload
-            result = await askFollowUp(currentSessionIdRef.current, currentQuestion);
+            result = await askFollowUp(currentSessionIdRef.current, currentQuestion, langCode);
           } else {
             // Fresh scan: upload image + question
-            result = await analyzeImage(currentImageBlob, currentQuestion);
+            result = await analyzeImage(currentImageBlob, currentQuestion, langCode);
             // Store session ID returned by backend for all subsequent follow-ups
             if (result.session_id) {
               currentSessionIdRef.current = result.session_id;
@@ -246,8 +482,11 @@ export function App() {
               currentSessionIdRef.current = null;
               isFollowUpModeRef.current = false;
             }
-            const msg = err.message || 'Failed to understand image.';
-            await speakSafe(`Sorry. ${msg}`);
+            const msg =
+              err.message ||
+              (isTamil ? 'படத்தை பகுப்பாய்வு செய்ய முடியவில்லை.' : 'Failed to understand image.');
+            const errMsg = isTamil ? `மன்னிக்கவும். ${msg}` : `Sorry. ${msg}`;
+            await speakSafe(errMsg, { lang: langCode });
             dispatch({
               type: FLOW_ACTIONS.SET_ERROR,
               payload: msg,
@@ -261,18 +500,23 @@ export function App() {
       // === ANSWER STATE ===
       if (status === FLOW_STATES.ANSWER) {
         if (currentAnswer) {
-          await speakSafe(currentAnswer);
+          const isTamil = /[\u0B80-\u0BFF]/.test(currentAnswer) || currentLangRef.current === 'ta';
+          await speakSafe(currentAnswer, { lang: isTamil ? 'ta' : 'en' });
         }
         if (isSubscribed) {
           dispatch({ type: FLOW_ACTIONS.ANSWER_FINISHED });
         }
       }
 
-      // === HOME STATE: Actively listen for "Hey Mate" on the home screen ===
+      // === HOME STATE: Actively listen for "Hey Mate" / "வணக்கம்" on the home screen ===
       if (status === FLOW_STATES.HOME) {
-        if (speechRecognitionService.isSupported()) {
+        if (wakeWordEnabled && speechRecognitionService.isSupported()) {
+          speechRecognitionService.setLang(currentLangRef.current === 'ta' ? 'ta-IN' : 'en-IN');
           speechRecognitionService.startWakeWordMode({
             isAppSpeaking: () => isSpeakingRef.current,
+            onStatusChange: (statusObj) => {
+              if (isSubscribed) setMicStatus(statusObj);
+            },
             onWake: async (trailingSpeech) => {
               playWakeChime();
               triggerHaptic([40, 50, 60]);
@@ -305,9 +549,13 @@ export function App() {
         const standbyTimer = setTimeout(() => {
           if (!isSubscribed) return;
 
-          if (speechRecognitionService.isSupported()) {
+          if (wakeWordEnabled && speechRecognitionService.isSupported()) {
+            speechRecognitionService.setLang(currentLangRef.current === 'ta' ? 'ta-IN' : 'en-IN');
             speechRecognitionService.startWakeWordMode({
               isAppSpeaking: () => isSpeakingRef.current,
+              onStatusChange: (statusObj) => {
+                if (isSubscribed) setMicStatus(statusObj);
+              },
               onWake: async (trailingSpeech, matchedPhrase) => {
                 // Ignore duplicate wake triggers within 2 seconds
                 const now = Date.now();
@@ -334,16 +582,30 @@ export function App() {
                   fullIntent.includes('take picture') ||
                   fullIntent.includes('open camera') ||
                   fullIntent.includes('another photo') ||
-                  fullIntent.includes('click photo')
+                  fullIntent.includes('click photo') ||
+                  fullIntent.includes('புதிய படம்') ||
+                  fullIntent.includes('புதிய ஸ்கேன்') ||
+                  fullIntent.includes('படம் எடு')
                 ) {
                   handleNewScan();
                   return;
                 }
 
                 // 2. Direct voice commands to repeat current answer
-                if (fullIntent.includes('repeat') || fullIntent.includes('read again')) {
+                if (
+                  fullIntent.includes('repeat') ||
+                  fullIntent.includes('read again') ||
+                  fullIntent.includes('say that again') ||
+                  fullIntent.includes('மீண்டும் சொல்') ||
+                  fullIntent.includes('மறுபடியும் சொல்')
+                ) {
                   if (stateRef.current.currentAnswer) {
-                    await speakSafe(stateRef.current.currentAnswer);
+                    const isTamilAns =
+                      /[\u0B80-\u0BFF]/.test(stateRef.current.currentAnswer) ||
+                      currentLangRef.current === 'ta';
+                    await speakSafe(stateRef.current.currentAnswer, {
+                      lang: isTamilAns ? 'ta' : 'en',
+                    });
                   }
                   return;
                 }
@@ -351,9 +613,6 @@ export function App() {
                 // 3. User woke assistant for follow-up question
                 isFollowUpModeRef.current = true; // flag: next PROCESSING = follow-up
                 dispatch({ type: FLOW_ACTIONS.WAKE_WORD_HEARD });
-
-                // Speak "I am listening." and wait for it to finish
-                await speakSafe('I am listening.');
 
                 // Check if user spoke the question in the same breath
                 if (trailingSpeech && trailingSpeech.length > 2) {
@@ -404,7 +663,7 @@ export function App() {
         speechRecognitionService.stop();
       }
     };
-  }, [state.status, speakSafe, checkGlobalVoiceCommands, startQuestionListening, handleStartFromHome, handleNewScan]);
+  }, [state.status, wakeWordEnabled, speakSafe, checkGlobalVoiceCommands, startQuestionListening, handleStartFromHome, handleNewScan]);
 
   /**
    * Handle Manual Tap on Orb in Standby: exact same sequence as wake phrase
@@ -414,21 +673,43 @@ export function App() {
     playWakeChime();
     triggerHaptic(40);
     isFollowUpModeRef.current = true; // flag: next PROCESSING = follow-up
-    dispatch({ type: FLOW_ACTIONS.WAKE_WORD_HEARD });
-    await speakSafe('I am listening.');
-    startQuestionListening();
-  }, [speakSafe, startQuestionListening]);
 
+    const isTa = currentLangRef.current === 'ta';
+    setMicStatus({
+      state: 'requesting_permission',
+      message: isTa
+        ? 'மைக்ரோஃபோன் அனுமதி கேட்கப்படுகிறது…'
+        : 'Requesting microphone permission…',
+    });
+
+    dispatch({ type: FLOW_ACTIONS.WAKE_WORD_HEARD });
+    startQuestionListening();
+  }, [startQuestionListening]);
 
   /**
    * Handle Manual Question Submission from Waveform view
    */
-  const handleManualQuestionSubmit = useCallback((text) => {
-    dispatch({
-      type: FLOW_ACTIONS.QUESTION_FINALIZED,
-      payload: text,
-    });
-  }, []);
+  const handleManualQuestionSubmit = useCallback(async (text) => {
+    const cleanQ = (text || '').trim();
+    if (!cleanQ) return;
+    speechRecognitionService.stop();
+
+    if (isFollowUpModeRef.current && currentSessionIdRef.current) {
+      dispatch({
+        type: FLOW_ACTIONS.QUESTION_FINALIZED,
+        payload: cleanQ,
+      });
+    } else {
+      pendingQuestionRef.current = cleanQ;
+      dispatch({ type: FLOW_ACTIONS.START_FLOW });
+      const isTaNow = currentLangRef.current === 'ta';
+      const camMsg = isTaNow
+        ? 'கேமரா திறக்கப்படுகிறது. மொபைலை நிலையாகப் பிடிக்கவும்.'
+        : 'Opening camera. Hold your phone steady.';
+      await speakSafe(camMsg, { lang: isTaNow ? 'ta' : 'en' });
+      dispatch({ type: FLOW_ACTIONS.CAMERA_READY });
+    }
+  }, [speakSafe]);
 
   /**
    * Global Keyboard Shortcuts (Space / Enter to trigger primary action, Esc to stop)
@@ -475,34 +756,49 @@ export function App() {
               type: FLOW_ACTIONS.SET_ERROR,
               payload: err.message || 'Camera error.',
             });
-            speakSafe('Camera access failed. Please check permissions.');
+            const errMsg =
+              currentLangRef.current === 'ta'
+                ? 'கேமரா அணுகல் தோல்வியடைந்தது. அனுமதியை சரிபார்க்கவும்.'
+                : 'Camera access failed. Please check permissions.';
+            speakSafe(errMsg, { lang: currentLangRef.current });
           }}
           onCancel={() => dispatch({ type: FLOW_ACTIONS.RETRY })}
           speakNumber={(num) => {
             const utterance = new SpeechSynthesisUtterance(num);
             utterance.rate = 1.2;
+            utterance.lang = currentLangRef.current === 'ta' ? 'ta-IN' : 'en-IN';
             window.speechSynthesis?.speak(utterance);
           }}
           isReadyToCountdown={state.status === FLOW_STATES.COUNTDOWN}
         />
       )}
 
-      {/* 3. Home Screen with Animated Speak Button */}
+      {/* 3. Home Screen with Animated Speak Button & Bilingual Selector */}
       {state.status === FLOW_STATES.HOME && (
         <HomeSpeakView
           onStart={handleStartFromHome}
           isListeningWake={isListeningWake}
           wakeError={wakeError}
+          currentLang={currentLang}
+          onSelectLang={handleSelectLang}
+          isAudioBlocked={isAudioBlocked}
+          onPlayGreeting={playWelcomeGreeting}
+          wakeWordEnabled={wakeWordEnabled}
+          onToggleWakeWord={handleToggleWakeWord}
+          micStatus={micStatus}
         />
       )}
 
-      {/* 4. Asking State with Animated Live Waveform */}
+      {/* 4. Asking State with Animated Live Waveform & Bilingual Suggestions */}
       {(state.status === FLOW_STATES.ASK || state.status === FLOW_STATES.FOLLOW_UP_ASK) && (
         <WaveformAskView
           imagePreviewUrl={state.currentImagePreviewUrl}
           interimTranscript={state.interimTranscript}
           onManualSubmit={handleManualQuestionSubmit}
           isFollowUp={state.status === FLOW_STATES.FOLLOW_UP_ASK}
+          currentLang={currentLang}
+          micStatus={micStatus}
+          onRetry={startQuestionListening}
         />
       )}
 
@@ -511,28 +807,35 @@ export function App() {
         <ProcessingScanView
           imagePreviewUrl={state.currentImagePreviewUrl}
           question={state.currentQuestion}
+          currentLang={currentLang}
         />
       )}
 
-      {/* 6. Answer & Standby State (Typewriter reveal + Breathing Orb) */}
+      {/* 6. Answer & Standby State (Typewriter reveal + Breathing Orb + Bilingual Toggle) */}
       {(state.status === FLOW_STATES.ANSWER || state.status === FLOW_STATES.STANDBY) && (
         <AnswerStandbyView
           question={state.currentQuestion}
           fullAnswer={state.currentAnswer}
-          isSpeaking={isSpeakingRef.current}
+          isSpeaking={isSpeakingState}
           status={state.status}
           imagePreviewUrl={state.currentImagePreviewUrl}
           isListeningWake={isListeningWake}
           wakeError={wakeError}
           restartCount={restartCount}
           isSupported={speechRecognitionService.isSupported()}
+          currentLang={currentLang}
+          onSelectLang={handleSelectLang}
           onNewScan={handleNewScan}
           onRepeat={() => state.currentAnswer && speakSafe(state.currentAnswer)}
           onStop={() => {
             SpeechSynthesizer.stop();
             isSpeakingRef.current = false;
+            setIsSpeakingState(false);
           }}
           onManualWake={handleManualWake}
+          wakeWordEnabled={wakeWordEnabled}
+          onToggleWakeWord={handleToggleWakeWord}
+          micStatus={micStatus}
         />
       )}
 

@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
+from app.prompts.accessibility import detect_text_language
 from app.services.gemma_service import (
     GemmaAPIError,
     GemmaConfigurationError,
@@ -97,11 +98,14 @@ async def analyze(
     image: Optional[UploadFile] = File(None, description="Image file to analyze (JPEG, PNG, WEBP, max 10MB)"),
     question: Optional[str] = Form(None, description="Question or prompt about the visual scene"),
     session_id: Optional[str] = Form(None, description="Optional session UUID for follow-up questions"),
+    language: Optional[str] = Form("en", description="Target response language ('en' or 'ta')"),
 ) -> AnalyzeResponse:
     # 1. Validate question is not empty
     clean_question = (question or "").strip()
     if not clean_question:
         raise empty_question_error()
+
+    resolved_lang = detect_text_language(clean_question, language or "en")
 
     store = get_session_store()
     processed_bytes: Optional[bytes] = None
@@ -169,6 +173,7 @@ async def analyze(
             image_bytes=processed_bytes,
             mime_type=preserved_mime_type,
             question=clean_question,
+            language=resolved_lang,
         )
     except GemmaConfigurationError as exc:
         logger.error(f"Gemma configuration error: {exc.message}")
@@ -208,6 +213,7 @@ async def analyze(
             mime_type=preserved_mime_type,
             question=clean_question,
             answer=answer,
+            language=resolved_lang,
         )
 
     # 6. Return standardized JSON response

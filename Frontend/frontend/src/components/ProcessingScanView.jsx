@@ -6,16 +6,25 @@ import { Sparkles } from 'lucide-react';
  * Renders a soft vertical laser/light sweep over the captured image thumbnail,
  * accompanied by subtle shimmer skeleton loaders for the incoming answer.
  */
-export function ProcessingScanView({ imagePreviewUrl, question }) {
-  const [statusText, setStatusText] = useState('Connecting to the assistant. This may take a moment.');
+export function ProcessingScanView({ imagePreviewUrl, question, currentLang = 'en' }) {
+  const isTa = currentLang === 'ta' || /[\u0B80-\u0BFF]/.test(question || '');
+  const [statusText, setStatusText] = useState(
+    isTa
+      ? 'உதவியாளருடன் இணைகிறது. ஒரு கணம் காத்திருக்கவும்.'
+      : 'Connecting to the assistant. This may take a moment.'
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setStatusText('Connecting to the assistant. The server may be waking up, please hold on...');
+      setStatusText(
+        isTa
+          ? 'உதவியாளருடன் இணைகிறது. சேவையகம் தயாராகிறது, தயவுசெய்து காத்திருக்கவும்...'
+          : 'Connecting to the assistant. The server may be waking up, please hold on...'
+      );
     }, 7000);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [isTa]);
 
   return (
     <div
@@ -28,10 +37,10 @@ export function ProcessingScanView({ imagePreviewUrl, question }) {
       {question && (
         <div className="w-full text-center">
           <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
-            Analyzing for Question
+            {isTa ? 'உங்கள் கேள்வி' : 'Analyzing for Question'}
           </span>
           <p className="text-lg font-semibold text-white mt-0.5 truncate">
-            "{question}"
+            &ldquo;{question}&rdquo;
           </p>
         </div>
       )}

@@ -90,6 +90,7 @@ class InMemorySessionStore:
         mime_type: str,
         question: str,
         answer: str,
+        language: str = "en",
     ) -> None:
         """Save a new session with its initial image and Q&A pair."""
         now = time.time()
@@ -99,6 +100,7 @@ class InMemorySessionStore:
                 "session_id": session_id,
                 "image_bytes": image_bytes,
                 "mime_type": mime_type,
+                "language": language,
                 "created_at": now,
                 "last_accessed": now,
                 "history": [

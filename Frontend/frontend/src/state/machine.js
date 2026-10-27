@@ -31,6 +31,7 @@ export const FLOW_ACTIONS = {
   TRIGGER_CAPTURE: 'TRIGGER_CAPTURE',
   IMAGE_CAPTURED: 'IMAGE_CAPTURED',
   START_ASK: 'START_ASK',
+  UPDATE_INTERIM_TRANSCRIPT: 'UPDATE_INTERIM_TRANSCRIPT',
   QUESTION_FINALIZED: 'QUESTION_FINALIZED',
   ANALYSIS_SUCCESS: 'ANALYSIS_SUCCESS',
   ANSWER_FINISHED: 'ANSWER_FINISHED',
@@ -41,7 +42,7 @@ export const FLOW_ACTIONS = {
 };
 
 export const initialFlowState = {
-  status: FLOW_STATES.SPLASH,
+  status: FLOW_STATES.HOME,
   countdownNumber: 5,
   currentImageBlob: null,
   currentImagePreviewUrl: null,
@@ -107,11 +108,17 @@ export function flowReducer(state, action) {
         interimTranscript: '',
       };
 
+    case FLOW_ACTIONS.UPDATE_INTERIM_TRANSCRIPT:
+      return {
+        ...state,
+        interimTranscript: action.payload,
+      };
+
     case FLOW_ACTIONS.QUESTION_FINALIZED:
       return {
         ...state,
         currentQuestion: action.payload,
-        interimTranscript: '',
+        interimTranscript: action.payload, // Keep final sentence visible while processing
         status: FLOW_STATES.PROCESSING,
       };
 

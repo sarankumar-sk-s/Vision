@@ -90,21 +90,44 @@ export const SpeechSynthesizer = {
       utterance.rate = options.rate || 1.0;
       utterance.pitch = options.pitch || 1.0;
 
-      // Select voice
+      // Detect language: explicit options.lang or Tamil Unicode characters
+      const isTamil =
+        options.lang === 'ta' ||
+        options.lang === 'ta-IN' ||
+        /[\u0B80-\u0BFF]/.test(chunk);
+
+      utterance.lang = isTamil ? 'ta-IN' : 'en-IN';
+
+      // Select voice: prioritize language-specific voices
       const voices = window.speechSynthesis.getVoices();
       if (voices && voices.length > 0) {
-        const preferred =
-          voices.find(
-            (v) =>
-              v.lang.startsWith('en') &&
-              (v.name.includes('Natural') ||
-                v.name.includes('Google') ||
-                v.name.includes('Samantha') ||
-                v.name.includes('Jenny') ||
-                v.name.includes('Guy'))
-          ) ||
-          voices.find((v) => v.lang.startsWith('en')) ||
-          voices[0];
+        let preferred = null;
+        if (isTamil) {
+          preferred =
+            voices.find(
+              (v) =>
+                v.lang === 'ta-IN' ||
+                v.lang.startsWith('ta') ||
+                v.lang.toLowerCase().includes('tamil') ||
+                v.name.toLowerCase().includes('tamil')
+            ) ||
+            voices.find((v) => v.lang.startsWith('en')) ||
+            voices[0];
+        } else {
+          preferred =
+            voices.find(
+              (v) =>
+                (v.lang === 'en-IN' || v.lang.startsWith('en')) &&
+                (v.name.includes('Natural') ||
+                  v.name.includes('Google') ||
+                  v.name.includes('Samantha') ||
+                  v.name.includes('Jenny') ||
+                  v.name.includes('Guy'))
+            ) ||
+            voices.find((v) => v.lang === 'en-IN') ||
+            voices.find((v) => v.lang.startsWith('en')) ||
+            voices[0];
+        }
         if (preferred) utterance.voice = preferred;
       }
 

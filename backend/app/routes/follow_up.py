@@ -7,9 +7,11 @@ and returns the assistant's answer without capturing or requiring a new image.
 """
 
 import logging
+from typing import Optional
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
+from app.prompts.accessibility import detect_text_language
 from app.services.gemma_service import (
     GemmaAPIError,
     GemmaConfigurationError,
@@ -37,6 +39,7 @@ router = APIRouter(prefix="/api/follow-up", tags=["Follow-Up"])
 class FollowUpRequest(BaseModel):
     session_id: str = Field(..., description="Active session ID from previous image analysis")
     question: str = Field(..., description="Follow-up question about the visual scene")
+    language: Optional[str] = Field("en", description="Target response language ('en' or 'ta')")
 
 
 class FollowUpResponse(BaseModel):
@@ -97,12 +100,16 @@ async def follow_up(request: FollowUpRequest) -> FollowUpResponse:
     )
 
     # 4. Invoke Gemma 4 multimodal service reusing cached image + context
+    requested_lang = request.language or session.get("language", "en")
+    resolved_lang = detect_text_language(clean_question, requested_lang)
+
     try:
         answer = await analyze_follow_up_with_gemma(
             image_bytes=cached_image_bytes,
             mime_type=cached_mime_type,
             question=clean_question,
             history=history,
+            language=resolved_lang,
         )
     except GemmaConfigurationError as exc:
         logger.error(f"Gemma configuration error: {exc.message}")

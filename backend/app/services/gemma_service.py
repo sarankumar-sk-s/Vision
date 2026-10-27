@@ -12,7 +12,10 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
 
-from app.prompts.accessibility import get_accessibility_system_instruction
+from app.prompts.accessibility import (
+    detect_text_language,
+    get_accessibility_system_instruction,
+)
 
 # Ensure environment variables are loaded
 load_dotenv()
@@ -149,6 +152,7 @@ def _prepare_generation_payload(
     mime_type: str,
     question: str,
     history: Optional[List[Dict[str, str]]] = None,
+    language: Optional[str] = "en",
     timeout: Optional[float] = None,
 ) -> tuple[list, types.GenerateContentConfig]:
     """
@@ -165,11 +169,11 @@ def _prepare_generation_payload(
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type.strip().lower())
     contents = [image_part, prompt_text]
 
-    # Accessibility system instruction
-    # NOTE: HttpOptions.timeout is in MILLISECONDS per SDK specification
+    # Accessibility system instruction with bilingual language routing
+    resolved_lang = detect_text_language(question, language or "en")
     http_options = types.HttpOptions(timeout=int(timeout * 1000)) if timeout else None
     config = types.GenerateContentConfig(
-        system_instruction=get_accessibility_system_instruction(),
+        system_instruction=get_accessibility_system_instruction(resolved_lang),
         http_options=http_options,
     )
 
@@ -262,6 +266,7 @@ async def analyze_image_with_gemma(
     mime_type: str,
     question: str,
     history: Optional[List[Dict[str, str]]] = None,
+    language: Optional[str] = "en",
     model_name: Optional[str] = None,
     client: Optional[genai.Client] = None,
     timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS,
@@ -274,6 +279,7 @@ async def analyze_image_with_gemma(
         mime_type: MIME type of the image (e.g., 'image/jpeg', 'image/png', 'image/webp').
         question: User's accessibility query regarding the visual input.
         history: Optional previous Q&A exchanges for follow-up conversation context.
+        language: Target response language ('en' or 'ta').
         model_name: Optional model override. Defaults strictly to GEMMA_MODEL environment variable.
         client: Optional pre-configured GenAI client.
         timeout: Maximum duration in seconds to wait for model response.
@@ -288,11 +294,12 @@ async def analyze_image_with_gemma(
         mime_type,
         question,
         history=history,
+        language=language,
         timeout=effective_timeout,
     )
     active_client = client or create_genai_client()
 
-    logger.info(f"Sending multimodal analysis request to Gemma model '{resolved_model}' (timeout={effective_timeout}s)...")
+    logger.info(f"Sending multimodal analysis request to Gemma model '{resolved_model}' (timeout={effective_timeout}s, lang={language})...")
 
     try:
         response = await asyncio.wait_for(
@@ -330,6 +337,7 @@ async def analyze_follow_up_with_gemma(
     mime_type: str,
     question: str,
     history: Optional[List[Dict[str, str]]] = None,
+    language: Optional[str] = "en",
     model_name: Optional[str] = None,
     client: Optional[genai.Client] = None,
     timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS,
@@ -343,6 +351,7 @@ async def analyze_follow_up_with_gemma(
         mime_type=mime_type,
         question=question,
         history=history,
+        language=language,
         model_name=model_name,
         client=client,
         timeout=timeout,
@@ -354,6 +363,7 @@ def analyze_image_with_gemma_sync(
     mime_type: str,
     question: str,
     history: Optional[List[Dict[str, str]]] = None,
+    language: Optional[str] = "en",
     model_name: Optional[str] = None,
     client: Optional[genai.Client] = None,
     timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS,
@@ -368,6 +378,7 @@ def analyze_image_with_gemma_sync(
         mime_type,
         question,
         history=history,
+        language=language,
         timeout=effective_timeout,
     )
     active_client = client or create_genai_client()

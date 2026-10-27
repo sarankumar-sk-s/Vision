@@ -1,35 +1,59 @@
 import React from 'react';
 import { Mic, ArrowRight, Sparkles } from 'lucide-react';
 import { triggerHaptic } from '../utils/sound.js';
+import { MicStatusIndicator } from './MicStatusIndicator.jsx';
 
 /**
  * WaveformAskView Component
  * Renders an animated live audio waveform and real-time transcript
- * with quick accessibility suggestions for questions.
+ * with accurate microphone status indicator and quick suggestions.
  */
 export function WaveformAskView({
   imagePreviewUrl,
   interimTranscript,
   onManualSubmit,
   isFollowUp = false,
+  currentLang = 'en',
+  micStatus = { state: 'ready', message: '', transcript: '' },
+  onRetry = null,
 }) {
-  const suggestions = isFollowUp
-    ? [
-        'Describe in more detail',
-        'What colors and shapes are visible?',
-        'Read any visible text or numbers',
-        'Where are objects located?',
-      ]
-    : [
-        'Describe what is in front of me in detail.',
-        'Read any text or signs visible',
-        'Is there any obstacle or danger?',
-      ];
+  const suggestions = currentLang === 'ta'
+    ? (isFollowUp
+      ? [
+          'விளக்கமாக கூறுங்கள்',
+          'அது என்ன நிறம்?',
+          'எழுத்துக்களை படித்து கூறுங்கள்',
+          'பொருட்கள் எங்கு உள்ளன?',
+        ]
+      : [
+          'என் முன்னால் என்ன இருக்கிறது?',
+          'எழுத்துக்களை படித்து கூறுங்கள்',
+          'ஏதேனும் ஆபத்து அல்லது தடை உள்ளதா?',
+        ])
+    : (isFollowUp
+      ? [
+          'Describe in more detail',
+          'What colors and shapes are visible?',
+          'Read any visible text or numbers',
+          'Where are objects located?',
+        ]
+      : [
+          'Describe what is in front of me in detail.',
+          'Read any text or signs visible',
+          'Is there any obstacle or danger?',
+        ]);
 
   const handleChipClick = (suggestion) => {
     triggerHaptic(40);
     if (onManualSubmit) {
       onManualSubmit(suggestion);
+    }
+  };
+
+  const handleMicClick = () => {
+    triggerHaptic(50);
+    if (onRetry) {
+      onRetry();
     }
   };
 
@@ -48,7 +72,9 @@ export function WaveformAskView({
             className="w-7 h-7 rounded-full object-cover border border-cyan-400/50"
           />
           <span className="text-xs font-semibold text-zinc-300">
-            {isFollowUp ? 'Follow-up on same image' : 'Image Captured'}
+            {isFollowUp
+              ? (currentLang === 'ta' ? 'அதே படத்தில் தொடர் கேள்வி' : 'Follow-up on same image')
+              : (currentLang === 'ta' ? 'படம் எடுக்கப்பட்டது' : 'Image Captured')}
           </span>
         </div>
       )}
@@ -58,9 +84,15 @@ export function WaveformAskView({
         <div className="relative flex items-center justify-center">
           {/* Ambient Glow Ring */}
           <div className="absolute w-40 h-40 rounded-full bg-cyan-500/15 animate-ping pointer-events-none" />
-          <div className="relative z-10 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-tr from-blue-900 via-blue-700 to-cyan-500 flex items-center justify-center shadow-[0_0_40px_rgba(56,189,248,0.4)] border-2 border-cyan-300/40">
+          <button
+            type="button"
+            onClick={handleMicClick}
+            className="relative z-10 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-tr from-blue-900 via-blue-700 to-cyan-500 flex items-center justify-center shadow-[0_0_40px_rgba(56,189,248,0.4)] border-2 border-cyan-300/40 cursor-pointer active:scale-95 transition-transform"
+            aria-label={currentLang === 'ta' ? 'மீண்டும் பேச தொடவும்' : 'Tap to speak or retry'}
+            title={currentLang === 'ta' ? 'மீண்டும் பேச தொடவும்' : 'Tap to speak or retry'}
+          >
             <Mic size={40} className="text-white animate-pulse" aria-hidden="true" />
-          </div>
+          </button>
         </div>
 
         {/* Dynamic 6-Bar Waveform */}
@@ -74,25 +106,43 @@ export function WaveformAskView({
         </div>
 
         <p className="text-xl sm:text-2xl font-bold text-white tracking-wide text-center">
-          {isFollowUp ? 'Listening for follow-up...' : 'What would you like to know?'}
+          {isFollowUp
+            ? (currentLang === 'ta' ? 'கேள்வி கேட்கவும்...' : 'Listening for follow-up...')
+            : (currentLang === 'ta' ? 'என்ன அறிய விரும்புகிறீர்கள்?' : 'What would you like to know?')}
         </p>
       </div>
 
       {/* Real-time Transcription & Quick Suggestions */}
       <div className="w-full flex flex-col gap-3">
-        {/* Transcription Status */}
+        {/* Accurate Microphone Status Indicator */}
+        <div className="flex items-center justify-center">
+          <MicStatusIndicator
+            micStatus={micStatus}
+            currentLang={currentLang}
+            onRetry={onRetry}
+          />
+        </div>
+
+        {/* Real-time Transcription Card: Shows "You are saying:" / "நீங்கள் கூறுவது:" */}
         <div
-          className="min-h-[64px] w-full p-3.5 rounded-2xl bg-zinc-900/90 border border-cyan-500/30 text-white text-base sm:text-lg font-medium leading-relaxed flex items-center justify-center text-center shadow-lg backdrop-blur-md"
+          className="min-h-[84px] w-full p-4 rounded-2xl bg-zinc-900/95 border border-cyan-500/40 text-white flex flex-col justify-center text-center shadow-lg backdrop-blur-md"
           role="status"
           aria-live="polite"
         >
-          {interimTranscript ? (
-            <span className="text-cyan-200 font-semibold">&ldquo;{interimTranscript}&rdquo;</span>
-          ) : (
-            <span className="text-zinc-400 text-sm italic">
-              Speak your question or tap a suggestion below
-            </span>
-          )}
+          <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1">
+            {currentLang === 'ta' ? 'நீங்கள் கூறுவது:' : 'You are saying:'}
+          </span>
+          <p className="text-lg sm:text-xl font-bold leading-relaxed text-cyan-100 select-text">
+            {interimTranscript ? (
+              <span>&ldquo;{interimTranscript}&rdquo;</span>
+            ) : (
+              <span className="text-zinc-500 text-sm font-normal italic">
+                {currentLang === 'ta'
+                  ? 'உங்கள் கேள்வியைப் பேசவும் அல்லது கீழே உள்ளதைத் தொடவும்...'
+                  : 'Start speaking your question or tap a suggestion below...'}
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Quick Suggestion Chips */}
@@ -118,7 +168,7 @@ export function WaveformAskView({
             className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-base flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-98 transition-transform"
             aria-label="Submit recognized question"
           >
-            <span>Ask This Question</span>
+            <span>{currentLang === 'ta' ? 'இந்தக் கேள்வியைக் கேள்' : 'Ask This Question'}</span>
             <ArrowRight size={18} />
           </button>
         )}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Volume2, VolumeX, RefreshCw, Mic } from 'lucide-react';
 import { FLOW_STATES, WAKE_PHRASE } from '../state/machine.js';
 import { triggerHaptic } from '../utils/sound.js';
+import { MicStatusIndicator } from './MicStatusIndicator.jsx';
 
 /**
  * AnswerStandbyView Component
@@ -17,14 +18,19 @@ export function AnswerStandbyView({
   isSpeaking,
   status,
   imagePreviewUrl,
-  isListeningWake = false,
+  _isListeningWake = false,
   wakeError = null,
   restartCount = 0,
   isSupported = true,
+  currentLang = 'en',
+  onSelectLang,
   onNewScan,
   onRepeat,
   onStop,
   onManualWake,
+  wakeWordEnabled = true,
+  onToggleWakeWord,
+  micStatus = { state: 'ready', message: '', transcript: '' },
 }) {
   const [displayedAnswer, setDisplayedAnswer] = useState(() => (
     status === FLOW_STATES.STANDBY ? fullAnswer : ''
@@ -71,7 +77,7 @@ export function AnswerStandbyView({
       role="region"
       aria-label="Answer and Standby"
     >
-      {/* 1. Header with Image Thumbnail & Status */}
+      {/* 1. Header with Image Thumbnail & Status & Language Toggle */}
       <div className="w-full flex items-center justify-between pb-2 border-b border-zinc-800">
         <div className="flex items-center gap-2">
           {imagePreviewUrl && (
@@ -86,17 +92,80 @@ export function AnswerStandbyView({
           </span>
         </div>
 
-        {/* Header Status Badge */}
-        {isSpeaking ? (
-          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-400/30 flex items-center gap-1.5 animate-pulse">
-            <Volume2 size={12} />
-            <span>Speaking...</span>
-          </span>
-        ) : (
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300">
-            Standby Mode
-          </span>
-        )}
+        {/* Language Selector + Wake-Word Toggle + Status Badge */}
+        <div className="flex items-center gap-2">
+          {/* Hands-Free Wake-Word Toggle */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onToggleWakeWord) onToggleWakeWord();
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+              wakeWordEnabled
+                ? 'bg-cyan-950/80 border-cyan-400/50 text-cyan-300 shadow-[0_0_10px_rgba(56,189,248,0.25)]'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-zinc-300'
+            }`}
+            aria-label={
+              wakeWordEnabled
+                ? currentLang === 'ta' ? "ஹேண்ட்ஸ்-ஃப்ரீ 'Hey Mate' முடக்கு" : "Disable 'Hey Mate' hands-free listening"
+                : currentLang === 'ta' ? "ஹேண்ட்ஸ்-ஃப்ரீ 'Hey Mate' இயக்கு" : "Enable 'Hey Mate' hands-free listening"
+            }
+            aria-pressed={wakeWordEnabled}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${wakeWordEnabled ? 'bg-cyan-400 animate-pulse' : 'bg-zinc-500'}`} />
+            <span>{wakeWordEnabled ? 'Hey Mate: ON' : 'Hey Mate: OFF'}</span>
+          </button>
+
+          <div
+            className="flex items-center bg-zinc-900 border border-zinc-700/80 rounded-full p-0.5 text-xs font-bold"
+            role="radiogroup"
+            aria-label="Select language"
+          >
+            <button
+              type="button"
+              onClick={() => onSelectLang && onSelectLang('en')}
+              className={`px-2 py-0.5 rounded-full transition-colors ${
+                currentLang === 'en'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              role="radio"
+              aria-checked={currentLang === 'en'}
+              aria-label="English language"
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectLang && onSelectLang('ta')}
+              className={`px-2 py-0.5 rounded-full transition-colors ${
+                currentLang === 'ta'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              role="radio"
+              aria-checked={currentLang === 'ta'}
+              aria-label="தமிழ் மொழி"
+            >
+              தமிழ்
+            </button>
+          </div>
+
+          {/* Header Status Badge */}
+          {isSpeaking ? (
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-400/30 flex items-center gap-1.5 animate-pulse">
+              <Volume2 size={12} />
+              <span>{currentLang === 'ta' ? 'பேசுகிறது...' : 'Speaking...'}</span>
+            </span>
+          ) : (
+            <MicStatusIndicator
+              micStatus={micStatus}
+              currentLang={currentLang}
+              onRetry={onManualWake}
+            />
+          )}
+        </div>
       </div>
 
       {/* 2. Question Chat Bubble & Typewriter Answer */}
@@ -104,7 +173,9 @@ export function AnswerStandbyView({
         {/* User's Question Bubble */}
         {question && (
           <div className="self-end max-w-[85%] px-4 py-2.5 rounded-2xl rounded-br-xs bg-blue-600 text-white font-medium text-base shadow-sm">
-            <span className="text-[11px] block uppercase font-bold text-blue-200">You Asked</span>
+            <span className="text-[11px] block uppercase font-bold text-blue-200">
+              {currentLang === 'ta' ? 'உங்கள் கேள்வி' : 'You Asked'}
+            </span>
             <p className="mt-0.5">{question}</p>
           </div>
         )}
@@ -117,7 +188,7 @@ export function AnswerStandbyView({
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold tracking-wider uppercase text-zinc-400">
-              Answer
+              {currentLang === 'ta' ? 'பதில்' : 'Answer'}
             </span>
             {isSpeaking && (
               <button
@@ -127,7 +198,7 @@ export function AnswerStandbyView({
                 aria-label="Stop reading answer aloud"
               >
                 <VolumeX size={14} />
-                <span>Stop</span>
+                <span>{currentLang === 'ta' ? 'நிறுத்து' : 'Stop'}</span>
               </button>
             )}
           </div>
@@ -165,15 +236,33 @@ export function AnswerStandbyView({
           <div className="flex flex-col items-center gap-1 text-center px-4">
             {!isSupported ? (
               <span className="text-xs font-semibold text-amber-300">
-                Voice wake not supported in this browser, tap the orb
+                {currentLang === 'ta'
+                  ? 'குரல் அறிதல் ஆதரிக்கப்படவில்லை, வட்டத்தில் தொடவும்'
+                  : 'Voice wake not supported in this browser, tap the orb'}
               </span>
             ) : restartCount >= 3 || wakeError === 'permission-denied' ? (
               <span className="text-xs font-semibold text-amber-300">
-                Voice wake not available, tap the orb
+                {currentLang === 'ta'
+                  ? 'மைக்ரோஃபோன் கிடைக்கவில்லை, வட்டத்தில் தொடவும்'
+                  : 'Voice wake not available, tap the orb'}
+              </span>
+            ) : !wakeWordEnabled ? (
+              <span className="text-xs font-semibold text-zinc-400">
+                {currentLang === 'ta'
+                  ? "ஹேண்ட்ஸ்-ஃப்ரீ 'Hey Mate' முடக்கப்பட்டுள்ளது, வட்டத்தில் தொடவும்"
+                  : "Hands-free 'Hey Mate' is OFF, tap the orb to speak"}
               </span>
             ) : (
               <p className="text-sm sm:text-base font-semibold text-zinc-300">
-                Say <strong className="text-cyan-400">&ldquo;{WAKE_PHRASE}&rdquo;</strong> or tap
+                {currentLang === 'ta' ? (
+                  <>
+                    <strong className="text-cyan-400">&ldquo;வணக்கம்&rdquo;</strong> அல்லது வட்டத்தில் தொடவும்
+                  </>
+                ) : (
+                  <>
+                    Say <strong className="text-cyan-400">&ldquo;{WAKE_PHRASE}&rdquo;</strong> or tap
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -186,20 +275,20 @@ export function AnswerStandbyView({
             onClick={onRepeat}
             disabled={isSpeaking}
             className="min-h-[52px] px-4 py-3 rounded-xl bg-zinc-850 hover:bg-zinc-800 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 border border-zinc-700/80 shadow-sm cursor-pointer disabled:opacity-50 active:scale-98 transition-transform"
-            aria-label="Repeat answer aloud"
+            aria-label={currentLang === 'ta' ? 'பதிலை மீண்டும் வாசிக்கவும்' : 'Repeat answer aloud'}
           >
             <Volume2 size={18} className="text-cyan-400" />
-            <span>Repeat</span>
+            <span>{currentLang === 'ta' ? 'மீண்டும் சொல்' : 'Repeat'}</span>
           </button>
 
           <button
             type="button"
             onClick={onNewScan}
             className="min-h-[52px] px-4 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-98 transition-transform"
-            aria-label="Start new scan"
+            aria-label={currentLang === 'ta' ? 'புதிய படம் எடுக்கவும்' : 'Start new scan'}
           >
             <RefreshCw size={18} />
-            <span>New Scan</span>
+            <span>{currentLang === 'ta' ? 'புதிய படம்' : 'New Scan'}</span>
           </button>
         </div>
       </div>
