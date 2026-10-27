@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+
+  html,
+  body {
+    font-family: var(--font-sans);
+    height: 100%;
+    height: 100dvh;
+    width: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    background-color: #0A0E17;
+    color: #F8FAFC;
+  }
+
+  /* Accessible focus indicators */
+  :focus-visible {
+    outline: 3px solid #38BDF8 !important;
+    outline-offset: 2px !important;
+  }
+
+  button,
+  input {
+    touch-action: manipulation;
+  }
+}
+
+/* ==========================================================================
+   Animations for Native PWA Visual Experience
+   ========================================================================== */
+
+/* 1. Splash Screen SVG Stroke Draw Animation */
+@keyframes strokeDraw {
+  0% {
+    stroke-dashoffset: 800;
+    opacity: 0.1;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.animate-stroke-draw {
+  stroke-dasharray: 800;
+  stroke-dashoffset: 800;
+  animation: strokeDraw 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 2. Calm Breathing Animation for the Orb in Standby */
+@keyframes calmBreathe {
+  0%, 100% {
+    transform: scale(0.98);
+    box-shadow: 0 0 35px -5px rgba(56, 189, 248, 0.25), inset 0 0 20px rgba(56, 189, 248, 0.15);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow: 0 0 65px 5px rgba(56, 189, 248, 0.45), inset 0 0 30px rgba(56, 189, 248, 0.3);
+  }
+}
+
+.animate-orb-breathe {
+  animation: calmBreathe 3.6s ease-in-out infinite;
+}
+
+/* 3. Active Waveform Bars for Listening */
+@keyframes waveBar {
+  0%, 100% {
+    height: 8px;
+    opacity: 0.4;
+  }
+  50% {
+    height: 42px;
+    opacity: 1;
+  }
+}
+
+.animate-wave-1 { animation: waveBar 0.9s ease-in-out infinite 0.0s; }
+.animate-wave-2 { animation: waveBar 0.9s ease-in-out infinite 0.15s; }
+.animate-wave-3 { animation: waveBar 0.9s ease-in-out infinite 0.3s; }
+.animate-wave-4 { animation: waveBar 0.9s ease-in-out infinite 0.45s; }
+.animate-wave-5 { animation: waveBar 0.9s ease-in-out infinite 0.6s; }
+.animate-wave-6 { animation: waveBar 0.9s ease-in-out infinite 0.75s; }
+
+/* 4. Scanning line sweeping across image thumbnail */
+@keyframes scanSweep {
+  0% {
+    top: -4px;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.animate-scan-sweep {
+  animation: scanSweep 2s ease-in-out infinite;
+}
+
+/* 5. Shutter flash effect */
+@keyframes shutterFlashAnim {
+  0% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-shutter-flash {
+  animation: shutterFlashAnim 0.35s ease-out forwards;
+}
+
+/* 6. Subtle shimmer skeleton */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+}
+
+/* Safe area padding utilities */
+.pt-safe {
+  padding-top: max(16px, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-stroke-draw,
+  .animate-orb-breathe,
+  .animate-wave-1,
+  .animate-wave-2,
+  .animate-wave-3,
+  .animate-wave-4,
+  .animate-wave-5,
+  .animate-wave-6,
+  .animate-scan-sweep,
+  .animate-shutter-flash,
+  .animate-shimmer {
+    animation: none !important;
+  }
+}
