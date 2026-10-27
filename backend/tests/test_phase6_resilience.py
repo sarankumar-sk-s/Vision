@@ -275,3 +275,23 @@ def test_cors_preflight_allows_configured_origins():
     resp = client.options("/api/analyze", headers=headers)
     assert resp.status_code == 200
     assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    # Test deployed Vercel frontend origin
+    vercel_headers = {
+        "Origin": "https://vision-dusky-xi.vercel.app",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "Content-Type",
+    }
+    vercel_resp = client.options("/api/analyze", headers=vercel_headers)
+    assert vercel_resp.status_code == 200
+    assert vercel_resp.headers.get("access-control-allow-origin") == "https://vision-dusky-xi.vercel.app"
+
+    # Test Vercel preview domain via regex
+    preview_headers = {
+        "Origin": "https://vision-test-preview.vercel.app",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "Content-Type",
+    }
+    preview_resp = client.options("/api/analyze", headers=preview_headers)
+    assert preview_resp.status_code == 200
+    assert preview_resp.headers.get("access-control-allow-origin") == "https://vision-test-preview.vercel.app"

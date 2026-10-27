@@ -45,6 +45,7 @@ def get_configured_cors_origins() -> List[str]:
         "http://127.0.0.1:5174",
         "http://127.0.0.1:5175",
         "http://127.0.0.1:5176",
+        "https://vision-dusky-xi.vercel.app",
     ]
     origins_set = set(default_dev_origins)
 
@@ -52,12 +53,12 @@ def get_configured_cors_origins() -> List[str]:
     env_origins = os.getenv("CORS_ORIGINS", "")
     if env_origins:
         for origin in env_origins.split(","):
-            clean = origin.strip()
+            clean = origin.strip().rstrip("/")
             if clean:
                 origins_set.add(clean)
 
     # Single deployed frontend URL from FRONTEND_ORIGIN or FRONTEND_URL
-    deployed_url = (os.getenv("FRONTEND_ORIGIN") or os.getenv("FRONTEND_URL") or "").strip()
+    deployed_url = (os.getenv("FRONTEND_ORIGIN") or os.getenv("FRONTEND_URL") or "").strip().rstrip("/")
     if deployed_url:
         origins_set.add(deployed_url)
 
@@ -72,11 +73,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Apply CORS middleware using environment configuration + local development regex
+# Apply CORS middleware using environment configuration + local dev regex + Vercel domains
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_configured_cors_origins(),
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|https://.*\.vercel\.app|https://.*\.onrender\.com)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

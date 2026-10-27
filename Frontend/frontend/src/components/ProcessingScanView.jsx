@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles } from 'lucide-react';
 
 /**
@@ -7,6 +7,16 @@ import { Sparkles } from 'lucide-react';
  * accompanied by subtle shimmer skeleton loaders for the incoming answer.
  */
 export function ProcessingScanView({ imagePreviewUrl, question }) {
+  const [statusText, setStatusText] = useState('Connecting to the assistant. This may take a moment.');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setStatusText('Connecting to the assistant. The server may be waking up, please hold on...');
+    }, 7000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div
       className="flex-1 w-full flex flex-col items-center justify-center p-4 max-w-md mx-auto gap-6"
@@ -59,7 +69,7 @@ export function ProcessingScanView({ imagePreviewUrl, question }) {
       </div>
 
       <p className="text-base font-semibold text-zinc-300 animate-pulse text-center">
-        Please wait, I am understanding it...
+        {statusText}
       </p>
     </div>
   );

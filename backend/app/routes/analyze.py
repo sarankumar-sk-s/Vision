@@ -195,8 +195,7 @@ async def analyze(
         raise server_error(f"Gemma error: {_sanitize_text(exc.message)}")
     except Exception as exc:
         logger.error(f"Unexpected error during image analysis: {exc}", exc_info=True)
-        from app.utils.errors import _sanitize_text
-        raise server_error(f"Analysis error: {_sanitize_text(str(exc))}")
+        raise server_error()
 
 
     # 5. Store/update session in memory for follow-up questions

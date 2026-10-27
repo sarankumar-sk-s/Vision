@@ -33,6 +33,8 @@ export function App() {
   const currentSessionIdRef = useRef(null);
   // Tracks whether the current PROCESSING is a follow-up (no new image) or a fresh scan
   const isFollowUpModeRef = useRef(false);
+  // Guard against duplicate concurrent processing requests
+  const isProcessingRef = useRef(false);
 
   // Keep stateRef updated at all times to prevent stale closure bugs in callbacks
   const stateRef = useRef(state);
@@ -212,7 +214,10 @@ export function App() {
 
       // === PROCESSING STATE ===
       if (status === FLOW_STATES.PROCESSING) {
-        await speakSafe('Please wait, I am understanding it.');
+        if (isProcessingRef.current) return;
+        isProcessingRef.current = true;
+
+        await speakSafe('Connecting to the assistant. This may take a moment.');
 
         try {
           let result;
@@ -248,6 +253,8 @@ export function App() {
               payload: msg,
             });
           }
+        } finally {
+          isProcessingRef.current = false;
         }
       }
 
@@ -439,6 +446,9 @@ export function App() {
         } else if (stateRef.current.status === FLOW_STATES.STANDBY) {
           e.preventDefault();
           handleManualWake();
+        } else if (stateRef.current.status === FLOW_STATES.ERROR) {
+          e.preventDefault();
+          dispatch({ type: FLOW_ACTIONS.RETRY });
         }
       }
     };

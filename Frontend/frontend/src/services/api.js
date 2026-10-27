@@ -16,9 +16,9 @@
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
-  'http://localhost:8000'
+  'https://vision-ke6v.onrender.com'
 ).replace(/\/+$/, '');
-const REQUEST_TIMEOUT_MS = 60000; // 60s — Gemma inference can take ~20-30s
+const REQUEST_TIMEOUT_MS = 90000; // 90s — accommodates Render cold start + Gemma multimodal inference
 
 /**
  * Sends image and question to the backend POST /api/analyze endpoint.
@@ -78,11 +78,11 @@ export async function analyzeImage(imageBlob, question) {
     clearTimeout(timeoutId);
 
     if (err.name === 'AbortError') {
-      throw new Error('Request timed out after 60 seconds. Please try again.');
+      throw new Error('Request timed out. The assistant took longer than expected to respond. Please try again.');
     }
-    if (err.name === 'TypeError' && err.message.toLowerCase().includes('fetch')) {
+    if (err.name === 'TypeError' && (err.message.toLowerCase().includes('fetch') || err.message.toLowerCase().includes('network') || err.message.toLowerCase().includes('failed'))) {
       throw new Error(
-        `Unable to reach the VisionMate backend at ${API_BASE_URL}. Please check that the backend server is running.`,
+        'Unable to reach the assistant server. The service may be waking up or temporarily unavailable. Please try again in a moment.',
       );
     }
     throw err;
@@ -144,11 +144,11 @@ export async function askFollowUp(sessionId, question) {
     clearTimeout(timeoutId);
 
     if (err.name === 'AbortError') {
-      throw new Error('Follow-up request timed out. Please try again.');
+      throw new Error('Follow-up request timed out. The assistant took longer than expected to respond. Please try again.');
     }
-    if (err.name === 'TypeError' && err.message.toLowerCase().includes('fetch')) {
+    if (err.name === 'TypeError' && (err.message.toLowerCase().includes('fetch') || err.message.toLowerCase().includes('network') || err.message.toLowerCase().includes('failed'))) {
       throw new Error(
-        `Unable to reach the VisionMate backend at ${API_BASE_URL}. Please check that the backend server is running.`,
+        'Unable to reach the assistant server. The service may be waking up or temporarily unavailable. Please try again in a moment.',
       );
     }
     throw err;
